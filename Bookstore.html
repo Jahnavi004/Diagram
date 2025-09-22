@@ -1,0 +1,338 @@
+/*
+Simple BookStore React App (single-file)
+
+How to use:
+1. Create a new React app (Vite or Create React App). Example with Vite:
+   npm create vite@latest my-bookstore -- --template react
+   cd my-bookstore
+   npm install
+
+2. Install TailwindCSS (optional, app uses Tailwind classes for styling). Follow Tailwind install for your setup.
+   (or remove tailwind classes in code if you don't want to install Tailwind)
+
+3. Replace src/App.jsx with this file's contents. Make sure src/main.jsx renders <App />.
+
+4. npm run dev (or npm start)
+
+Notes:
+- This is a single-file frontend app that uses localStorage to persist books and cart.
+- It simulates buying (moves items to cart and "checkout"). No server / payment integration included.
+- To connect a backend, add API calls where indicated.
+*/
+
+import React, { useState, useEffect } from "react";
+
+const SAMPLE_BOOKS = [
+  {
+    id: "b1",
+    title: "The Pragmatic Programmer",
+    author: "Andrew Hunt",
+    price: 399,
+    image:
+      "https://images-na.ssl-images-amazon.com/images/I/41as+WafrFL._SX331_BO1,204,203,200_.jpg",
+    qty: 5,
+    description: "Classic book about pragmatic software development.",
+  },
+  {
+    id: "b2",
+    title: "Clean Code",
+    author: "Robert C. Martin",
+    price: 449,
+    image:
+      "https://images-na.ssl-images-amazon.com/images/I/41xShlnTZTL._SX374_BO1,204,203,200_.jpg",
+    qty: 3,
+    description: "A handbook of agile software craftsmanship.",
+  },
+  {
+    id: "b3",
+    title: "You Don't Know JS (Yet)",
+    author: "Kyle Simpson",
+    price: 299,
+    image:
+      "https://m.media-amazon.com/images/I/51b7XbfMIIL._SX331_BO1,204,203,200_.jpg",
+    qty: 8,
+    description: "Deep dive into JavaScript core mechanisms.",
+  },
+];
+
+function useLocalStorage(key, initial) {
+  const [state, setState] = useState(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : initial;
+    } catch (e) {
+      return initial;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch (e) {}
+  }, [key, state]);
+  return [state, setState];
+}
+
+export default function App() {
+  const [books, setBooks] = useLocalStorage("books", SAMPLE_BOOKS);
+  const [cart, setCart] = useLocalStorage("cart", []);
+  const [query, setQuery] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+
+  function addBook(book) {
+    setBooks((b) => [{ ...book, id: "b" + Date.now() }, ...b]);
+    setShowAdd(false);
+  }
+
+  function buyNow(bookId) {
+    const book = books.find((x) => x.id === bookId);
+    if (!book || book.qty <= 0) return alert("Book out of stock");
+    setCart((c) => {
+      const existing = c.find((i) => i.id === bookId);
+      if (existing) {
+        return c.map((i) => (i.id === bookId ? { ...i, qty: i.qty + 1 } : i));
+      }
+      return [...c, { id: book.id, title: book.title, price: book.price, qty: 1 }];
+    });
+    setBooks((b) => b.map((x) => (x.id === bookId ? { ...x, qty: x.qty - 1 } : x)));
+  }
+
+  function removeFromCart(bookId) {
+    const item = cart.find((c) => c.id === bookId);
+    if (!item) return;
+    setCart((c) => c.filter((i) => i.id !== bookId));
+    // return stock back to books
+    setBooks((b) => b.map((x) => (x.id === bookId ? { ...x, qty: x.qty + item.qty } : x)));
+  }
+
+  function checkout() {
+    if (cart.length === 0) return alert("Cart empty");
+    // In real app: call backend to create order, charge payment, etc.
+    alert("Order placed successfully! Total: ₹" + cartTotal());
+    setCart([]);
+  }
+
+  function cartTotal() {
+    return cart.reduce((s, i) => s + i.price * i.qty, 0);
+  }
+
+  function addToCart(bookId) {
+    buyNow(bookId);
+  }
+
+  function updateCartQty(bookId, newQty) {
+    const item = cart.find((c) => c.id === bookId);
+    if (!item) return;
+    const diff = newQty - item.qty;
+    const book = books.find((b) => b.id === bookId);
+    if (diff > 0 && book && book.qty < diff) return alert("Not enough stock");
+    setCart((c) => c.map((i) => (i.id === bookId ? { ...i, qty: newQty } : i)));
+    setBooks((b) => b.map((x) => (x.id === bookId ? { ...x, qty: x.qty - diff } : x)));
+  }
+
+  function deleteBook(bookId) {
+    // when a book is removed, return cart quantities (if any)
+    const item = cart.find((c) => c.id === bookId);
+    if (item) setCart((c) => c.filter((i) => i.id !== bookId));
+    setBooks((b) => b.filter((x) => x.id !== bookId));
+  }
+
+  const filtered = books.filter(
+    (b) =>
+      b.title.toLowerCase().includes(query.toLowerCase()) ||
+      b.author.toLowerCase().includes(query.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        <header className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold">📚 Mini Bookstore</h1>
+          <div className="flex items-center gap-3">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by title or author"
+              className="px-3 py-2 border rounded"
+            />
+            <button
+              onClick={() => setShowAdd((s) => !s)}
+              className="px-3 py-2 bg-indigo-600 text-white rounded"
+            >
+              {showAdd ? "Close" : "Sell a Book"}
+            </button>
+            <CartPreview
+              cart={cart}
+              onRemove={removeFromCart}
+              onCheckout={checkout}
+              onUpdateQty={updateCartQty}
+            />
+          </div>
+        </header>
+
+        {showAdd && <AddBookForm onAdd={addBook} />}
+
+        <main className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <section className="md:col-span-2">
+            <h2 className="text-xl font-semibold mb-4">Available Books</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {filtered.map((book) => (
+                <BookCard
+                  key={book.id}
+                  book={book}
+                  onBuy={() => buyNow(book.id)}
+                  onAddToCart={() => addToCart(book.id)}
+                  onDelete={() => deleteBook(book.id)}
+                />
+              ))}
+              {filtered.length === 0 && (
+                <div className="p-4 bg-white rounded shadow">No books found.</div>
+              )}
+            </div>
+          </section>
+
+          <aside className="bg-white p-4 rounded shadow">
+            <h3 className="font-semibold">Quick Info</h3>
+            <p className="text-sm text-gray-600 mt-2">Total books: {books.length}</p>
+            <p className="text-sm text-gray-600">Cart total: ₹{cartTotal()}</p>
+            <div className="mt-4">
+              <button
+                className="px-3 py-2 bg-green-600 text-white rounded w-full"
+                onClick={checkout}
+              >
+                Checkout
+              </button>
+            </div>
+          </aside>
+        </main>
+
+        <footer className="mt-10 text-center text-sm text-gray-500">Built with ❤️ — Demo only</footer>
+      </div>
+    </div>
+  );
+}
+
+function BookCard({ book, onBuy, onAddToCart, onDelete }) {
+  return (
+    <div className="bg-white rounded shadow p-4 flex gap-4">
+      <img src={book.image} alt={book.title} className="w-28 h-36 object-cover rounded" />
+      <div className="flex-1">
+        <h4 className="font-semibold">{book.title}</h4>
+        <p className="text-sm text-gray-600">{book.author}</p>
+        <p className="mt-2">{book.description}</p>
+        <div className="mt-3 flex items-center justify-between">
+          <div>
+            <div className="text-lg font-bold">₹{book.price}</div>
+            <div className="text-xs text-gray-500">Stock: {book.qty}</div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onAddToCart}
+              className="px-2 py-1 border rounded"
+            >
+              Add to cart
+            </button>
+            <button
+              onClick={onBuy}
+              className="px-2 py-1 bg-indigo-600 text-white rounded"
+              disabled={book.qty <= 0}
+            >
+              Buy
+            </button>
+            <button onClick={onDelete} className="px-2 py-1 border rounded text-red-600">
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddBookForm({ onAdd }) {
+  const [title, setTitle] = useState("");
+  const [author, setAuthor] = useState("");
+  const [price, setPrice] = useState(0);
+  const [image, setImage] = useState("");
+  const [qty, setQty] = useState(1);
+  const [description, setDescription] = useState("");
+
+  function submit(e) {
+    e.preventDefault();
+    if (!title || !author || !price) return alert("Please fill title, author, price");
+    onAdd({ title, author, price: Number(price), image: image || defaultCover(), qty: Number(qty), description });
+    setTitle("");
+    setAuthor("");
+    setPrice(0);
+    setImage("");
+    setQty(1);
+    setDescription("");
+  }
+
+  function defaultCover() {
+    return "https://via.placeholder.com/150x220.png?text=Book+Cover";
+  }
+
+  return (
+    <form onSubmit={submit} className="mb-6 bg-white p-4 rounded shadow">
+      <h3 className="font-semibold mb-2">Sell a Book</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="px-2 py-2 border rounded" />
+        <input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author" className="px-2 py-2 border rounded" />
+        <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" placeholder="Price (₹)" className="px-2 py-2 border rounded" />
+        <input value={qty} onChange={(e) => setQty(e.target.value)} type="number" placeholder="Quantity" className="px-2 py-2 border rounded" />
+        <input value={image} onChange={(e) => setImage(e.target.value)} placeholder="Cover image URL (optional)" className="px-2 py-2 border rounded col-span-2" />
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short description" className="px-2 py-2 border rounded col-span-2" />
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button className="px-3 py-2 bg-blue-600 text-white rounded">List book</button>
+        <button type="button" onClick={() => {
+          setTitle(""); setAuthor(""); setPrice(0); setImage(""); setQty(1); setDescription("");
+        }} className="px-3 py-2 border rounded">Reset</button>
+      </div>
+    </form>
+  );
+}
+
+function CartPreview({ cart, onRemove, onCheckout, onUpdateQty }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((s) => !s)} className="px-3 py-2 border rounded">
+        Cart ({cart.reduce((s, i) => s + i.qty, 0)})
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-80 bg-white shadow rounded p-3 z-50">
+          <h4 className="font-semibold">Your Cart</h4>
+          {cart.length === 0 && <p className="text-sm text-gray-600">Cart is empty</p>}
+          <div className="space-y-2 mt-2 max-h-48 overflow-auto">
+            {cart.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-2">
+                <div className="flex-1">
+                  <div className="font-semibold">{item.title}</div>
+                  <div className="text-sm text-gray-600">₹{item.price} × {item.qty}</div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={item.qty}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) || 1;
+                      if (v < 1) return;
+                      onUpdateQty(item.id, v);
+                    }}
+                    className="w-16 px-1 py-1 border rounded"
+                  />
+                  <button onClick={() => onRemove(item.id)} className="text-red-600 px-2">Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={onCheckout} className="flex-1 px-3 py-2 bg-green-600 text-white rounded">Checkout</button>
+            <button onClick={() => { setOpen(false); }} className="px-3 py-2 border rounded">Close</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
